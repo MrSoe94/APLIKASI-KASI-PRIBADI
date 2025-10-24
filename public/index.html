@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi Keuangan Pribadi</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1><i class="fas fa-wallet"></i> Keuangan Pribadi</h1>
+            <div class="header-actions">
+                <button id="passwordBtn" class="btn btn-secondary">
+                    <i class="fas fa-lock"></i> Ganti Password
+                </button>
+            </div>
+        </header>
+
+        <!-- Summary Cards -->
+        <section class="summary">
+            <div class="card">
+                <div class="card-header">
+                    <h3><i class="fas fa-arrow-up"></i> Pemasukan</h3>
+                </div>
+                <div class="card-body">
+                    <div class="amount income" id="totalIncome">Rp 0</div>
+                    <small>Bulan ini: <span id="currentMonthIncome">Rp 0</span></small>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h3><i class="fas fa-arrow-down"></i> Pengeluaran</h3>
+                </div>
+                <div class="card-body">
+                    <div class="amount expense" id="totalExpenses">Rp 0</div>
+                    <small>Bulan ini: <span id="currentMonthExpenses">Rp 0</span></small>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h3><i class="fas fa-balance-scale"></i> Saldo</h3>
+                </div>
+                <div class="card-body">
+                    <div class="amount balance" id="balance">Rp 0</div>
+                    <small>Bulan ini: <span id="currentMonthBalance">Rp 0</span></small>
+                </div>
+            </div>
+        </section>
+
+        <!-- Add Transaction Form -->
+        <section class="add-transaction">
+            <div class="card">
+                <div class="card-header">
+                    <h3><i class="fas fa-plus"></i> Tambah Transaksi</h3>
+                </div>
+                <div class="card-body">
+                    <form id="transactionForm">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="description">Deskripsi</label>
+                                <input type="text" id="description" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="amount">Jumlah</label>
+                                <input type="number" id="amount" step="0.01" required>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="type">Tipe</label>
+                                <select id="type" required>
+                                    <option value="">Pilih Tipe</option>
+                                    <option value="income">Pemasukan</option>
+                                    <option value="expense">Pengeluaran</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="date">Tanggal</label>
+                                <input type="date" id="date" required>
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-plus"></i> Tambah Transaksi
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        <!-- Filter Section -->
+        <section class="filters-section">
+            <div class="card">
+                <div class="card-header">
+                    <h3><i class="fas fa-filter"></i> Filter Data</h3>
+                    <button id="clearFilters" class="btn btn-sm btn-secondary">
+                        <i class="fas fa-times"></i> Clear
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="filter-row">
+                        <div class="form-group">
+                            <label for="monthFilter">Filter Bulan</label>
+                            <select id="monthFilter">
+                                <option value="">Semua Bulan</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="startDateFilter">Dari Tanggal</label>
+                            <input type="date" id="startDateFilter">
+                        </div>
+                        <div class="form-group">
+                            <label for="endDateFilter">Sampai Tanggal</label>
+                            <input type="date" id="endDateFilter">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Transactions List -->
+        <section class="transactions">
+            <div class="card">
+                <div class="card-header">
+                    <h3><i class="fas fa-list"></i> Daftar Transaksi</h3>
+                    <div class="header-actions">
+                        <button id="exportExcelBtn" class="btn btn-secondary">
+                            <i class="fas fa-file-excel"></i> Export Excel
+                        </button>
+                        <button id="exportPDFBtn" class="btn btn-pdf">
+                            <i class="fas fa-file-pdf"></i> Export PDF
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="filters">
+                        <input type="text" id="searchInput" placeholder="Cari transaksi...">
+                        <select id="typeFilter">
+                            <option value="">Semua</option>
+                            <option value="income">Pemasukan</option>
+                            <option value="expense">Pengeluaran</option>
+                        </select>
+                        <div class="filter-group">
+                            <label for="itemsPerPageFilter">Tampilkan:</label>
+                            <select id="itemsPerPageFilter">
+                                <option value="10">10</option>
+                                <option value="25">25</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                                <option value="all">Semua</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="transactionsInfo"></div>
+                    <div id="transactionsList"></div>
+                    <div id="pagination"></div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Password Modal -->
+    <div id="passwordModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-lock"></i> Ganti Password</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="passwordForm">
+                    <div class="form-group">
+                        <label for="currentPassword">Password Saat Ini</label>
+                        <input type="password" id="currentPassword" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="newPassword">Password Baru</label>
+                        <input type="password" id="newPassword" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmPassword">Konfirmasi Password</label>
+                        <input type="password" id="confirmPassword" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Ganti Password</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Password Verification Modal -->
+    <div id="passwordVerifyModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-lock"></i> Verifikasi Password</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p>Masukkan password untuk melanjutkan aksi ini:</p>
+                <form id="passwordVerifyForm">
+                    <input type="hidden" id="verifyAction">
+                    <input type="hidden" id="verifyTransactionId">
+                    <div class="form-group">
+                        <label for="verifyPassword">Password</label>
+                        <input type="password" id="verifyPassword" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Verifikasi</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Transaction Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-edit"></i> Edit Transaksi</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="editForm">
+                    <input type="hidden" id="editId">
+                    <div class="form-group">
+                        <label for="editDescription">Deskripsi</label>
+                        <input type="text" id="editDescription" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="editAmount">Jumlah</label>
+                        <input type="number" id="editAmount" step="0.01" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="editType">Tipe</label>
+                        <select id="editType" required>
+                            <option value="income">Pemasukan</option>
+                            <option value="expense">Pengeluaran</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="editDate">Tanggal</label>
+                        <input type="date" id="editDate" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Update</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

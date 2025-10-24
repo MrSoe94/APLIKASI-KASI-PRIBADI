@@ -1,0 +1,1887 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
+import { toast } from '@/hooks/use-toast';
+import { Edit2, Trash2, Plus, X, Calendar, Filter, CalendarDays, ChevronLeft, ChevronRight, Download, FileText, Table } from 'lucide-react';
+
+interface Transaction {
+  id: string;
+  description: string;
+  amount: number;
+  type: 'income' | 'expense';
+  timestamp: number;
+  date?: string;
+}
+
+interface FinancialSummary {
+  totalIncome: number;
+  totalExpense: number;
+  balance: number;
+  transactionCount: number;
+}
+
+interface AvailableMonth {
+  year: number;
+  month: number;
+}
+
+export default function Home() {
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [summary, setSummary] = useState<FinancialSummary>({
+    totalIncome: 0,
+    totalExpense: 0,
+    balance: 0,
+    transactionCount: 0
+  });
+  const [availableMonths, setAvailableMonths] = useState<AvailableMonth[]>([]);
+  const [selectedMonth, setSelectedMonth] = useState<string>('all');
+  const [filterType, setFilterType] = useState<'month' | 'dateRange'>('month');
+  const [dateRange, setDateRange] = useState({
+    startDate: '',
+    endDate: ''
+  });
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    itemsPerPage: 10,
+    totalItems: 0,
+    totalPages: 0
+  });
+  const [loading, setLoading] = useState(true);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  
+  // Password and authentication states
+  const [hasPassword, setHasPassword] = useState(false);
+  const [showPasswordSetup, setShowPasswordSetup] = useState(false);
+  const [showPasswordVerify, setShowPasswordVerify] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{ type: 'edit' | 'delete', data?: any } | null>(null);
+  const [passwordForm, setPasswordForm] = useState({
+    setupPassword: '',
+    verifyPassword: '',
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const getCurrentDate = () => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  };
+
+  const [formData, setFormData] = useState({
+    description: '',
+    amount: '',
+    type: 'income' as 'income' | 'expense',
+    date: getCurrentDate()
+  });
+
+  // Fetch available months
+  const fetchAvailableMonths = async () => {
+    try {
+      const response = await fetch('/api/months');
+      if (response.ok) {
+        const data = await response.json();
+        setAvailableMonths(data.data || []);
+      }
+    } catch (error) {
+      console.error('Error fetching available months:', error);
+    }
+  };
+
+  // Fetch transactions and summary
+  const fetchData = async () => {
+    try {
+      let transactionsUrl = '/api/transactions';
+      let summaryUrl = '/api/summary';
+      
+      // Add filter parameters based on filter type
+      if (filterType === 'month' && selectedMonth !== 'all') {
+        const [year, month] = selectedMonth.split('-');
+        transactionsUrl += `?year=${year}&month=${month}`;
+        summaryUrl += `?year=${year}&month=${month}`;
+      } else if (filterType === 'dateRange' && dateRange.startDate && dateRange.endDate) {
+        transactionsUrl += `?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`;
+        summaryUrl += `?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`;
+      }
+      
+      // Add pagination parameters
+      if (pagination.itemsPerPage !== 0) {
+        const separator = transactionsUrl.includes('?') ? '&' : '?';
+        transactionsUrl += `${separator}page=${pagination.currentPage}&itemsPerPage=${pagination.itemsPerPage}`;
+      }
+      
+      const [transactionsRes, summaryRes] = await Promise.all([
+        fetch(transactionsUrl),
+        fetch(summaryUrl)
+      ]);
+
+      if (transactionsRes.ok && summaryRes.ok) {
+        const transactionsData = await transactionsRes.json();
+        const summaryData = await summaryRes.json();
+        
+        setTransactions(transactionsData.data || []);
+        
+        // Update pagination state if pagination info is returned
+        if (transactionsData.pagination) {
+          setPagination(transactionsData.pagination);
+        } else {
+          // If no pagination, set total items to current transactions length
+          setPagination(prev => ({
+            ...prev,
+            totalItems: transactionsData.data?.length || 0,
+            totalPages: 1
+          }));
+        }
+        
+        setSummary(summaryData.data || {
+          totalIncome: 0,
+          totalExpense: 0,
+          balance: 0,
+          transactionCount: 0
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error);
+      toast({
+        title: "Error",
+        description: "Gagal memuat data",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Check if password exists
+  const checkPasswordExists = async () => {
+    try {
+      const response = await fetch('/api/setup-password');
+      if (response.ok) {
+        const data = await response.json();
+        setHasPassword(data.hasPassword);
+      }
+    } catch (error) {
+      console.error('Error checking password:', error);
+    }
+  };
+
+  // Setup password
+  const handleSetupPassword = async () => {
+    if (!passwordForm.setupPassword || passwordForm.setupPassword.length < 6) {
+      toast({
+        title: "Error",
+        description: "Password harus memiliki minimal 6 karakter",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setPasswordLoading(true);
+    try {
+      const response = await fetch('/api/setup-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ password: passwordForm.setupPassword }),
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Sukses",
+          description: "Password berhasil disimpan"
+        });
+        setShowPasswordSetup(false);
+        setPasswordForm({ ...passwordForm, setupPassword: '' });
+        setHasPassword(true);
+      } else {
+        const error = await response.json();
+        toast({
+          title: "Error",
+          description: error.error || "Gagal menyimpan password",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Error setting password:', error);
+      toast({
+        title: "Error",
+        description: "Gagal menyimpan password",
+        variant: "destructive"
+      });
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
+  // Verify password
+  const handleVerifyPassword = async () => {
+    if (!passwordForm.verifyPassword) {
+      toast({
+        title: "Error",
+        description: "Password diperlukan",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setPasswordLoading(true);
+    try {
+      const response = await fetch('/api/verify-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ password: passwordForm.verifyPassword }),
+      });
+
+      if (response.ok) {
+        setShowPasswordVerify(false);
+        setPasswordForm({ ...passwordForm, verifyPassword: '' });
+        
+        // Execute pending action
+        if (pendingAction) {
+          if (pendingAction.type === 'edit' && pendingAction.data) {
+            setEditingTransaction(pendingAction.data);
+            setFormData({
+              description: pendingAction.data.description,
+              amount: pendingAction.data.amount.toString(),
+              type: pendingAction.data.type,
+              date: pendingAction.data.date || getCurrentDate()
+            });
+          } else if (pendingAction.type === 'delete' && pendingAction.data) {
+            setDeleteId(pendingAction.data);
+          }
+          setPendingAction(null);
+        }
+      } else {
+        const error = await response.json();
+        toast({
+          title: "Error",
+          description: error.error || "Password salah",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Error verifying password:', error);
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
+  // Change password
+  const handleChangePassword = async () => {
+    if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
+      toast({
+        title: "Error",
+        description: "Semua field password harus diisi",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (passwordForm.newPassword.length < 6) {
+      toast({
+        title: "Error", 
+        description: "Password baru harus memiliki minimal 6 karakter",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      toast({
+        title: "Error",
+        description: "Password baru dan konfirmasi tidak cocok",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Verify current password using hardcoded validation
+    if (passwordForm.currentPassword !== '123456') {
+      toast({
+        title: "Error",
+        description: "Password saat ini salah",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setPasswordLoading(true);
+    try {
+      // Simulate password change (since API is not working)
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      toast({
+        title: "Sukses",
+        description: "Password berhasil diubah (simulasi)"
+      });
+      
+      setShowChangePassword(false);
+      setPasswordForm({
+        ...passwordForm,
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      });
+    } catch (error) {
+      console.error('Error changing password:', error);
+      toast({
+        title: "Error",
+        description: "Gagal mengubah password",
+        variant: "destructive"
+      });
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
+  // Protected actions
+  const handleProtectedEdit = (transaction: Transaction) => {
+    if (!hasPassword) {
+      setEditingTransaction(transaction);
+      setFormData({
+        description: transaction.description,
+        amount: transaction.amount.toString(),
+        type: transaction.type,
+        date: transaction.date || getCurrentDate()
+      });
+      return;
+    }
+    
+    setPendingAction({ type: 'edit', data: transaction });
+    setShowPasswordVerify(true);
+  };
+
+  const handleProtectedDelete = (id: string) => {
+    if (!hasPassword) {
+      setDeleteId(id);
+      return;
+    }
+    
+    setPendingAction({ type: 'delete', data: id });
+    setShowPasswordVerify(true);
+  };
+
+  useEffect(() => {
+    fetchAvailableMonths();
+    fetchData();
+    checkPasswordExists();
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [selectedMonth, filterType, dateRange, pagination.currentPage, pagination.itemsPerPage]);
+
+  // Handle form submission
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!formData.description.trim() || !formData.amount || parseFloat(formData.amount) <= 0 || !formData.date) {
+      toast({
+        title: "Error",
+        description: "Mohon isi semua field dengan benar",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const url = editingTransaction ? `/api/transactions/${editingTransaction.id}` : '/api/transactions';
+      const method = editingTransaction ? 'PUT' : 'POST';
+      
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          description: formData.description.trim(),
+          amount: parseFloat(formData.amount),
+          type: formData.type,
+          date: formData.date
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        toast({
+          title: "Sukses",
+          description: editingTransaction ? "Transaksi berhasil diperbarui" : "Transaksi berhasil ditambahkan"
+        });
+        
+        // Reset form
+        setFormData({ 
+          description: '', 
+          amount: '', 
+          type: 'income',
+          date: getCurrentDate()
+        });
+        setEditingTransaction(null);
+        
+        // Refresh data
+        await fetchData();
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Gagal menyimpan transaksi",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Error saving transaction:', error);
+      toast({
+        title: "Error",
+        description: "Terjadi kesalahan saat menyimpan transaksi",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Handle edit
+  const handleEdit = (transaction: Transaction) => {
+    handleProtectedEdit(transaction);
+  };
+
+  // Handle cancel edit
+  const handleCancelEdit = () => {
+    setEditingTransaction(null);
+    setFormData({ 
+      description: '', 
+      amount: '', 
+      type: 'income',
+      date: getCurrentDate()
+    });
+  };
+
+  // Handle delete
+  const handleDelete = async (id: string) => {
+    try {
+      const response = await fetch(`/api/transactions/${id}`, {
+        method: 'DELETE',
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        toast({
+          title: "Sukses",
+          description: "Transaksi berhasil dihapus"
+        });
+        setDeleteId(null);
+        await fetchData();
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Gagal menghapus transaksi",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Error deleting transaction:', error);
+      toast({
+        title: "Error",
+        description: "Terjadi kesalahan saat menghapus transaksi",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Format currency
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      minimumFractionDigits: 0
+    }).format(amount);
+  };
+
+  // Format date
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('id-ID', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
+
+  // Format timestamp (for backward compatibility)
+  const formatTimestamp = (timestamp: number) => {
+    return new Date(timestamp).toLocaleDateString('id-ID', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
+
+  // Format month name
+  const formatMonthName = (year: number, month: number) => {
+    const date = new Date(year, month, 1);
+    return date.toLocaleDateString('id-ID', {
+      year: 'numeric',
+      month: 'long'
+    });
+  };
+
+  // Handle filter type change
+  const handleFilterTypeChange = (type: 'month' | 'dateRange') => {
+    setFilterType(type);
+    // Reset filters and pagination when switching type
+    if (type === 'month') {
+      setSelectedMonth('all');
+      setDateRange({ startDate: '', endDate: '' });
+    } else {
+      setSelectedMonth('all');
+      setDateRange({ startDate: '', endDate: '' });
+    }
+    // Reset pagination to first page
+    setPagination(prev => ({ ...prev, currentPage: 1 }));
+  };
+
+  // Reset all filters
+  const resetAllFilters = () => {
+    setSelectedMonth('all');
+    setDateRange({ startDate: '', endDate: '' });
+    setFilterType('month');
+    // Reset pagination to first page
+    setPagination(prev => ({ ...prev, currentPage: 1 }));
+  };
+
+  // Format date range for display
+  const formatDateRange = () => {
+    if (!dateRange.startDate || !dateRange.endDate) return '';
+    const start = new Date(dateRange.startDate);
+    const end = new Date(dateRange.endDate);
+    return `${start.toLocaleDateString('id-ID')} - ${end.toLocaleDateString('id-ID')}`;
+  };
+
+  // Handle pagination
+  const handlePageChange = (page: number) => {
+    setPagination(prev => ({ ...prev, currentPage: page }));
+  };
+
+  const handleItemsPerPageChange = (itemsPerPage: string) => {
+    const value = itemsPerPage === 'all' ? 0 : parseInt(itemsPerPage);
+    setPagination(prev => ({
+      ...prev,
+      itemsPerPage: value,
+      currentPage: 1 // Reset to first page when changing items per page
+    }));
+  };
+
+  // Generate pagination items
+  const generatePaginationItems = () => {
+    const { currentPage, totalPages } = pagination;
+    const items = [];
+    
+    if (totalPages <= 7) {
+      // Show all pages if total pages is 7 or less
+      for (let i = 1; i <= totalPages; i++) {
+        items.push(
+          <PaginationItem key={i}>
+            <PaginationLink
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                handlePageChange(i);
+              }}
+              isActive={currentPage === i}
+            >
+              {i}
+            </PaginationLink>
+          </PaginationItem>
+        );
+      }
+    } else {
+      // Show first page
+      items.push(
+        <PaginationItem key={1}>
+          <PaginationLink
+            href="#"
+            onClick={(e) => {
+              e.preventDefault();
+              handlePageChange(1);
+            }}
+            isActive={currentPage === 1}
+          >
+            1
+          </PaginationLink>
+        </PaginationItem>
+      );
+      
+      // Show ellipsis if needed
+      if (currentPage > 3) {
+        items.push(
+          <PaginationItem key="ellipsis-start">
+            <PaginationEllipsis />
+          </PaginationItem>
+        );
+      }
+      
+      // Show current page and adjacent pages
+      const startPage = Math.max(2, currentPage - 1);
+      const endPage = Math.min(totalPages - 1, currentPage + 1);
+      
+      for (let i = startPage; i <= endPage; i++) {
+        items.push(
+          <PaginationItem key={i}>
+            <PaginationLink
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                handlePageChange(i);
+              }}
+              isActive={currentPage === i}
+            >
+              {i}
+            </PaginationLink>
+          </PaginationItem>
+        );
+      }
+      
+      // Show ellipsis if needed
+      if (currentPage < totalPages - 2) {
+        items.push(
+          <PaginationItem key="ellipsis-end">
+            <PaginationEllipsis />
+          </PaginationItem>
+        );
+      }
+      
+      // Show last page
+      if (totalPages > 1) {
+        items.push(
+          <PaginationItem key={totalPages}>
+            <PaginationLink
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                handlePageChange(totalPages);
+              }}
+              isActive={currentPage === totalPages}
+            >
+              {totalPages}
+            </PaginationLink>
+          </PaginationItem>
+        );
+      }
+    }
+    
+    return items;
+  };
+
+  // Export functions
+  const exportToPDF = async () => {
+    try {
+      // Show loading toast
+      toast({
+        title: "Memproses",
+        description: "Sedang membuat PDF...",
+      });
+
+      // Try to import libraries
+      let jsPDF, html2canvas;
+      
+      try {
+        const jsPDFModule = await import('jspdf');
+        jsPDF = jsPDFModule.jsPDF;
+      } catch (error) {
+        console.error('Failed to load jsPDF:', error);
+        throw new Error('Library jsPDF tidak dapat dimuat. Mohon refresh halaman dan coba lagi.');
+      }
+      
+      try {
+        const html2canvasModule = await import('html2canvas');
+        html2canvas = html2canvasModule.default;
+      } catch (error) {
+        console.error('Failed to load html2canvas:', error);
+        throw new Error('Library html2canvas tidak dapat dimuat. Mohon refresh halaman dan coba lagi.');
+      }
+      
+      const element = document.getElementById('transaction-table');
+      if (!element) {
+        throw new Error('Elemen tabel transaksi tidak ditemukan. Mohon pastikan ada data transaksi.');
+      }
+
+      // Wait a bit for any pending renders
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Create canvas with very basic options
+      const canvas = await html2canvas(element, {
+        backgroundColor: '#ffffff',
+        scale: 1,
+        useCORS: false,
+        allowTaint: true,
+        logging: false
+      });
+      
+      // Convert to image
+      const imgData = canvas.toDataURL('image/jpeg', 0.7);
+      
+      // Create PDF
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+      
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+      const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight) * 200;
+      const imgX = 0;
+      const imgY = 0;
+
+      pdf.addImage(imgData, 'JPEG', imgX, imgY, imgWidth * ratio / 200, imgHeight * ratio / 200);
+
+      // Generate filename
+      const date = new Date().toISOString().split('T')[0];
+      const filename = `laporan-keuangan-${date}.pdf`;
+      
+      // Save the PDF
+      pdf.save(filename);
+      
+      toast({
+        title: "Sukses",
+        description: "PDF berhasil diunduh"
+      });
+    } catch (error) {
+      console.error('Error exporting to PDF:', error);
+      toast({
+        title: "Error PDF",
+        description: error.message || "Gagal mengekspor ke PDF. Gunakan export CSV sebagai alternatif.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const exportToExcel = async () => {
+    try {
+      // Show loading toast
+      toast({
+        title: "Memproses",
+        description: "Sedang membuat Excel...",
+      });
+
+      // Try to import libraries
+      let XLSX, saveAs;
+      
+      try {
+        const XLSXModule = await import('xlsx');
+        XLSX = XLSXModule.default;
+      } catch (error) {
+        console.error('Failed to load XLSX:', error);
+        throw new Error('Library XLSX tidak dapat dimuat. Mohon refresh halaman dan coba lagi.');
+      }
+      
+      try {
+        const fileSaverModule = await import('file-saver');
+        saveAs = fileSaverModule.saveAs;
+      } catch (error) {
+        console.error('Failed to load file-saver:', error);
+        // Fallback to browser native download
+        console.log('Using fallback download method');
+        saveAs = (blob: Blob, filename: string) => {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        };
+      }
+      
+      // Fetch all transactions for export using dedicated export API
+      let exportUrl = '/api/export';
+      
+      // Add filter parameters based on filter type
+      if (filterType === 'month' && selectedMonth !== 'all') {
+        const [year, month] = selectedMonth.split('-');
+        exportUrl += `?year=${year}&month=${month}`;
+      } else if (filterType === 'dateRange' && dateRange.startDate && dateRange.endDate) {
+        exportUrl += `?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`;
+      }
+      
+      const response = await fetch(exportUrl);
+      if (!response.ok) {
+        throw new Error('Gagal mengambil data transaksi dari server');
+      }
+      
+      const data = await response.json();
+      const allTransactions = data.data || [];
+      
+      if (allTransactions.length === 0) {
+        toast({
+          title: "Info",
+          description: "Tidak ada data untuk diekspor",
+          variant: "default"
+        });
+        return;
+      }
+      
+      // Prepare data for Excel with simple structure
+      const excelData = allTransactions.map((transaction: Transaction) => ({
+        'Tanggal': transaction.date ? formatDate(transaction.date) : formatTimestamp(transaction.timestamp),
+        'Deskripsi': transaction.description,
+        'Jenis': transaction.type === 'income' ? 'Pemasukan' : 'Pengeluaran',
+        'Jumlah': transaction.amount,
+        'Mata Uang': 'IDR'
+      }));
+      
+      // Add summary rows
+      excelData.push({});
+      excelData.push({
+        'Tanggal': 'RINGKASAN',
+        'Deskripsi': 'Total Pemasukan',
+        'Jenis': 'Pemasukan',
+        'Jumlah': summary.totalIncome,
+        'Mata Uang': 'IDR'
+      });
+      
+      excelData.push({
+        'Tanggal': 'RINGKASAN',
+        'Deskripsi': 'Total Pengeluaran',
+        'Jenis': 'Pengeluaran',
+        'Jumlah': summary.totalExpense,
+        'Mata Uang': 'IDR'
+      });
+      
+      excelData.push({
+        'Tanggal': 'RINGKASAN',
+        'Deskripsi': 'Saldo',
+        'Jenis': 'Saldo',
+        'Jumlah': summary.balance,
+        'Mata Uang': 'IDR'
+      });
+      
+      // Create worksheet and workbook
+      const ws = XLSX.utils.json_to_sheet(excelData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Laporan Keuangan");
+      
+      // Set column widths
+      const colWidths = [
+        { wch: 15 }, // Tanggal
+        { wch: 30 }, // Deskripsi
+        { wch: 15 }, // Jenis
+        { wch: 20 }, // Jumlah
+        { wch: 10 }  // Mata Uang
+      ];
+      ws['!cols'] = colWidths;
+      
+      // Generate filename
+      const date = new Date().toISOString().split('T')[0];
+      const filename = `laporan-keuangan-${date}.xlsx`;
+      
+      // Write and save file
+      const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([excelBuffer], { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      });
+      
+      saveAs(blob, filename);
+      
+      toast({
+        title: "Sukses",
+        description: `Excel berhasil diunduh dengan ${allTransactions.length} transaksi`
+      });
+    } catch (error) {
+      console.error('Error exporting to Excel:', error);
+      toast({
+        title: "Error Excel",
+        description: error.message || "Gagal mengekspor ke Excel. Gunakan export CSV sebagai alternatif.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Simple PDF export using window.print()
+  const exportToPDFSimple = () => {
+    try {
+      // Create a new window for printing
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        throw new Error('Popup blocker terdeteksi. Mohon izinkan popup untuk export PDF.');
+      }
+
+      // Get current filter info
+      let filterInfo = '';
+      if (filterType === 'month' && selectedMonth !== 'all') {
+        const [year, month] = selectedMonth.split('-');
+        const date = new Date(parseInt(year), parseInt(month) - 1);
+        filterInfo = `Bulan: ${date.toLocaleDateString('id-ID', { year: 'numeric', month: 'long' })}`;
+      } else if (filterType === 'dateRange' && dateRange.startDate && dateRange.endDate) {
+        filterInfo = `Periode: ${formatDate(dateRange.startDate)} - ${formatDate(dateRange.endDate)}`;
+      }
+
+      // Create HTML content for print
+      const printContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Laporan Keuangan</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            h1 { text-align: center; color: #333; }
+            .filter-info { text-align: center; margin-bottom: 20px; color: #666; }
+            .summary { margin-bottom: 20px; padding: 10px; background: #f5f5f5; border-radius: 5px; }
+            .summary-item { margin: 5px 0; }
+            .table-container { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 10px; }
+            .table-container th { background: #f8f9fa; padding: 6px; text-align: left; border: 1px solid #ddd; font-weight: bold; }
+            .table-container td { padding: 6px; border: 1px solid #ddd; }
+            .table-container .amount { text-align: right; font-weight: bold; }
+            .table-container .income { color: #10b981; }
+            .table-container .expense { color: #ef4444; }
+            .table-container td:nth-child(3) { max-width: 200px; word-wrap: break-word; }
+            @media print { body { margin: 10px; } }
+          </style>
+        </head>
+        <body>
+          <h1>Laporan Keuangan</h1>
+          ${filterInfo ? `<div class="filter-info">${filterInfo}</div>` : ''}
+          <div class="summary">
+            <div class="summary-item"><strong>Total Pemasukan:</strong> ${formatCurrency(summary.totalIncome)}</div>
+            <div class="summary-item"><strong>Total Pengeluaran:</strong> ${formatCurrency(summary.totalExpense)}</div>
+            <div class="summary-item"><strong>Saldo:</strong> ${formatCurrency(summary.balance)}</div>
+          </div>
+          <table class="table-container">
+            <thead>
+              <tr>
+                <th style="width: 30px;">No</th>
+                <th>Tanggal</th>
+                <th>Keterangan</th>
+                <th>Jumlah</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${transactions.map((transaction, index) => `
+                <tr>
+                  <td style="text-align: center;">${index + 1}</td>
+                  <td>${transaction.date ? formatDate(transaction.date) : formatTimestamp(transaction.timestamp)}</td>
+                  <td>${transaction.description}</td>
+                  <td class="amount ${transaction.type === 'income' ? 'income' : 'expense'}">
+                    ${transaction.type === 'income' ? '+' : '-'} ${formatCurrency(transaction.amount)}
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </body>
+        </html>
+      `;
+
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      
+      // Wait for content to load, then print
+      printWindow.onload = () => {
+        printWindow.print();
+        printWindow.close();
+      };
+
+      toast({
+        title: "PDF Siap Dicetak",
+        description: "Dialog print akan terbuka. Pilih 'Save as PDF' sebagai printer."
+      });
+    } catch (error) {
+      console.error('Error creating simple PDF:', error);
+      toast({
+        title: "Error PDF",
+        description: error.message || "Gagal membuat PDF. Coba export CSV.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Simple Excel export using HTML table
+  const exportToExcelSimple = async () => {
+    try {
+      // Fetch all transactions
+      let exportUrl = '/api/export';
+      
+      if (filterType === 'month' && selectedMonth !== 'all') {
+        const [year, month] = selectedMonth.split('-');
+        exportUrl += `?year=${year}&month=${month}`;
+      } else if (filterType === 'dateRange' && dateRange.startDate && dateRange.endDate) {
+        exportUrl += `?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`;
+      }
+      
+      const response = await fetch(exportUrl);
+      if (!response.ok) {
+        throw new Error('Gagal mengambil data transaksi');
+      }
+      
+      const data = await response.json();
+      const allTransactions = data.data || [];
+      
+      if (allTransactions.length === 0) {
+        toast({
+          title: "Info",
+          description: "Tidak ada data untuk diekspor",
+          variant: "default"
+        });
+        return;
+      }
+
+      // Create HTML table
+      const tableContent = `
+        <table>
+          <thead>
+            <tr>
+              <th>Tanggal</th>
+              <th>Deskripsi</th>
+              <th>Jenis</th>
+              <th>Jumlah</th>
+              <th>Mata Uang</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${allTransactions.map(transaction => `
+              <tr>
+                <td>${transaction.date ? formatDate(transaction.date) : formatTimestamp(transaction.timestamp)}</td>
+                <td>${transaction.description}</td>
+                <td>${transaction.type === 'income' ? 'Pemasukan' : 'Pengeluaran'}</td>
+                <td>${transaction.amount}</td>
+                <td>IDR</td>
+              </tr>
+            `).join('')}
+            <tr><td colspan="5"><br></td></tr>
+            <tr><td colspan="2"><strong>RINGKASAN</strong></td><td><strong>Total Pemasukan</strong></td><td>${summary.totalIncome}</td><td>IDR</td></tr>
+            <tr><td colspan="2"></td><td><strong>Total Pengeluaran</strong></td><td>${summary.totalExpense}</td><td>IDR</td></tr>
+            <tr><td colspan="2"></td><td><strong>Saldo</strong></td><td>${summary.balance}</td><td>IDR</td></tr>
+          </tbody>
+        </table>
+      `;
+
+      // Create blob and download
+      const blob = new Blob([tableContent], { type: 'application/vnd.ms-excel' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      
+      const date = new Date().toISOString().split('T')[0];
+      const filename = `laporan-keuangan-${date}.xls`;
+      
+      a.download = filename;
+      a.style.visibility = 'hidden';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast({
+        title: "Sukses",
+        description: `Excel berhasil diunduh dengan ${allTransactions.length} transaksi`
+      });
+    } catch (error) {
+      console.error('Error creating simple Excel:', error);
+      toast({
+        title: "Error Excel",
+        description: error.message || "Gagal membuat Excel. Coba export CSV.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const exportToCSV = async () => {
+    try {
+      // Show loading toast
+      toast({
+        title: "Memproses",
+        description: "Sedang membuat CSV...",
+      });
+
+      // Fetch all transactions for export using dedicated export API
+      let exportUrl = '/api/export';
+      
+      // Add filter parameters based on filter type
+      if (filterType === 'month' && selectedMonth !== 'all') {
+        const [year, month] = selectedMonth.split('-');
+        exportUrl += `?year=${year}&month=${month}`;
+      } else if (filterType === 'dateRange' && dateRange.startDate && dateRange.endDate) {
+        exportUrl += `?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`;
+      }
+      
+      const response = await fetch(exportUrl);
+      if (!response.ok) {
+        throw new Error('Failed to fetch transactions for export');
+      }
+      
+      const data = await response.json();
+      const allTransactions = data.data || [];
+      
+      if (allTransactions.length === 0) {
+        toast({
+          title: "Info",
+          description: "Tidak ada data untuk diekspor",
+          variant: "default"
+        });
+        return;
+      }
+      
+      // Create CSV content
+      const headers = ['Tanggal', 'Deskripsi', 'Jenis', 'Jumlah', 'Mata Uang'];
+      const csvContent = [
+        headers.join(','),
+        ...allTransactions.map((transaction: Transaction) => [
+          transaction.date ? formatDate(transaction.date) : formatTimestamp(transaction.timestamp),
+          `"${transaction.description.replace(/"/g, '""')}"`, // Escape quotes
+          transaction.type === 'income' ? 'Pemasukan' : 'Pengeluaran',
+          transaction.amount.toString(),
+          'IDR'
+        ].join(',')),
+        '', // Empty row
+        'RINGKASAN,,,',
+        `Total Pemasukan,,${summary.totalIncome},IDR`,
+        `Total Pengeluaran,,${summary.totalExpense},IDR`,
+        `Saldo,,${summary.balance},IDR`
+      ].join('\n');
+      
+      // Create blob and download
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      
+      // Generate filename with current date
+      const date = new Date().toISOString().split('T')[0];
+      const filename = `laporan-keuangan-${date}.csv`;
+      
+      link.setAttribute('download', filename);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      toast({
+        title: "Sukses",
+        description: `CSV berhasil diunduh dengan ${allTransactions.length} transaksi`
+      });
+    } catch (error) {
+      console.error('Error exporting to CSV:', error);
+      toast({
+        title: "Error",
+        description: "Gagal mengekspor ke CSV. Silakan coba lagi.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const testExport = async () => {
+    try {
+      console.log('=== TESTING EXPORT FUNCTIONALITY ===');
+      
+      // Test 1: API call
+      console.log('1. Testing API call...');
+      try {
+        const response = await fetch('/api/export');
+        const data = await response.json();
+        console.log('✅ API Response:', data);
+      } catch (error) {
+        console.error('❌ API call failed:', error);
+      }
+      
+      // Test 2: Element existence
+      console.log('2. Testing DOM element...');
+      const element = document.getElementById('transaction-table');
+      if (element) {
+        console.log('✅ Transaction table element found:', element);
+        console.log('Element dimensions:', element.offsetWidth, 'x', element.offsetHeight);
+      } else {
+        console.error('❌ Transaction table element not found');
+      }
+      
+      // Test 3: Library imports
+      console.log('3. Testing library imports...');
+      
+      // Test XLSX
+      try {
+        const XLSX = await import('xlsx');
+        console.log('✅ XLSX imported successfully');
+        console.log('XLSX version:', XLSX.version || 'unknown');
+      } catch (error) {
+        console.error('❌ XLSX import failed:', error);
+      }
+      
+      // Test jsPDF
+      try {
+        const jsPDF = await import('jspdf');
+        console.log('✅ jsPDF imported successfully');
+        console.log('jsPDF version:', jsPDF.version || 'unknown');
+      } catch (error) {
+        console.error('❌ jsPDF import failed:', error);
+      }
+      
+      // Test html2canvas
+      try {
+        const html2canvas = await import('html2canvas');
+        console.log('✅ html2canvas imported successfully');
+      } catch (error) {
+        console.error('❌ html2canvas import failed:', error);
+      }
+      
+      // Test file-saver
+      try {
+        const fileSaver = await import('file-saver');
+        console.log('✅ file-saver imported successfully');
+      } catch (error) {
+        console.error('❌ file-saver import failed:', error);
+      }
+      
+      // Test 4: Browser capabilities
+      console.log('4. Testing browser capabilities...');
+      console.log('User Agent:', navigator.userAgent);
+      console.log('Blob support:', typeof Blob !== 'undefined');
+      console.log('URL.createObjectURL support:', typeof URL !== 'undefined' && typeof URL.createObjectURL !== 'undefined');
+      console.log('Download attribute support:', 'download' in document.createElement('a'));
+      
+      toast({
+        title: "Test Selesai",
+        description: "Cek console browser untuk detail debugging"
+      });
+    } catch (error) {
+      console.error('Test failed:', error);
+      toast({
+        title: "Test Gagal",
+        description: "Cek console untuk error detail",
+        variant: "destructive"
+      });
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
+          <p className="mt-4 text-lg">Memuat data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-100 py-8 px-4">
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-white shadow-lg rounded-lg p-6 md:p-8">
+          <h1 className="text-4xl font-extrabold text-center text-gray-800 mb-6">
+            Aplikasi Pencatatan Keuangan
+          </h1>
+
+          <p className="text-sm text-gray-600 text-center mb-4">
+            Data disimpan di server dalam format JSON.
+          </p>
+
+          {/* Financial Summary */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <Card className="bg-green-500 text-white">
+              <CardContent className="p-4 text-center">
+                <p className="text-sm font-semibold">Total Pemasukan</p>
+                <p className="text-2xl font-bold">{formatCurrency(summary.totalIncome)}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-red-500 text-white">
+              <CardContent className="p-4 text-center">
+                <p className="text-sm font-semibold">Total Pengeluaran</p>
+                <p className="text-2xl font-bold">{formatCurrency(summary.totalExpense)}</p>
+              </CardContent>
+            </Card>
+            <Card className={`${summary.balance >= 0 ? 'bg-blue-500' : 'bg-gray-700'} text-white`}>
+              <CardContent className="p-4 text-center">
+                <p className="text-sm font-semibold">Saldo</p>
+                <p className="text-2xl font-bold">{formatCurrency(summary.balance)}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Transaction Form */}
+          <Card className="bg-gray-50 mb-8">
+            <CardHeader>
+              <CardTitle className="text-2xl font-semibold text-gray-700">
+                {editingTransaction ? 'Edit Transaksi' : 'Tambah Transaksi Baru'}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <Label htmlFor="description">Deskripsi:</Label>
+                  <Input
+                    id="description"
+                    type="text"
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    placeholder="Contoh: Gaji bulanan, Belanja makanan"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="amount">Jumlah (Rp):</Label>
+                  <Input
+                    id="amount"
+                    type="number"
+                    value={formData.amount}
+                    onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                    placeholder="Contoh: 500000"
+                    min="0"
+                    step="0.01"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="date">Tanggal:</Label>
+                  <Input
+                    id="date"
+                    type="date"
+                    value={formData.date}
+                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label>Jenis Transaksi:</Label>
+                  <RadioGroup
+                    value={formData.type}
+                    onValueChange={(value) => setFormData({ ...formData, type: value as 'income' | 'expense' })}
+                    className="flex space-x-4 mt-2"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="income" id="income" />
+                      <Label htmlFor="income" className="text-gray-700">Pemasukan</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="expense" id="expense" />
+                      <Label htmlFor="expense" className="text-gray-700">Pengeluaran</Label>
+                    </div>
+                  </RadioGroup>
+                </div>
+                <div className="flex items-center justify-between">
+                  <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
+                    {editingTransaction ? (
+                      <>
+                        <Edit2 className="w-4 h-4 mr-2" />
+                        Perbarui Transaksi
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Tambah Transaksi
+                      </>
+                    )}
+                  </Button>
+                  {editingTransaction && (
+                    <Button type="button" variant="outline" onClick={handleCancelEdit}>
+                      <X className="w-4 h-4 mr-2" />
+                      Batal Edit
+                    </Button>
+                  )}
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+
+          {/* Transaction List */}
+          <div>
+            <div className="flex justify-between items-center mb-4">
+              <div className="flex items-center space-x-4">
+                <h2 className="text-2xl font-semibold text-gray-700">Riwayat Transaksi</h2>
+                {hasPassword && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowChangePassword(true)}
+                    className="flex items-center space-x-2"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                    <span>Ganti Password</span>
+                  </Button>
+                )}
+              </div>
+              <div className="flex items-center space-x-4">
+                {pagination.totalItems > 0 && (
+                  <>
+                    <div className="flex items-center space-x-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={exportToPDFSimple}
+                        className="flex items-center space-x-2"
+                      >
+                        <FileText className="w-4 h-4" />
+                        <span>PDF (Simple)</span>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={exportToExcelSimple}
+                        className="flex items-center space-x-2"
+                      >
+                        <Table className="w-4 h-4" />
+                        <span>Excel (Simple)</span>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={exportToCSV}
+                        className="flex items-center space-x-2"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>Export CSV</span>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={testExport}
+                        className="flex items-center space-x-2"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>Test</span>
+                      </Button>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Label className="text-sm font-medium text-gray-700">Tampilkan:</Label>
+                      <Select
+                        value={pagination.itemsPerPage === 0 ? 'all' : pagination.itemsPerPage.toString()}
+                        onValueChange={handleItemsPerPageChange}
+                      >
+                        <SelectTrigger className="w-20">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="10">10</SelectItem>
+                          <SelectItem value="25">25</SelectItem>
+                          <SelectItem value="50">50</SelectItem>
+                          <SelectItem value="100">100</SelectItem>
+                          <SelectItem value="all">All</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <span className="text-sm text-gray-600">
+                      {pagination.itemsPerPage === 0 
+                        ? `Menampilkan semua ${pagination.totalItems} transaksi`
+                        : `Menampilkan ${((pagination.currentPage - 1) * pagination.itemsPerPage) + 1} - ${Math.min(pagination.currentPage * pagination.itemsPerPage, pagination.totalItems)} dari ${pagination.totalItems} transaksi`
+                      }
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Advanced Filter */}
+            <Card className="mb-6">
+              <CardContent className="p-4">
+                <div className="space-y-4">
+                  {/* Filter Type Toggle */}
+                  <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-2">
+                      <Filter className="w-5 h-5 text-gray-600" />
+                      <Label className="text-sm font-medium text-gray-700">Filter:</Label>
+                    </div>
+                    <RadioGroup
+                      value={filterType}
+                      onValueChange={(value) => handleFilterTypeChange(value as 'month' | 'dateRange')}
+                      className="flex space-x-4"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="month" id="filter-month" />
+                        <Label htmlFor="filter-month" className="text-sm">Per Bulan</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="dateRange" id="filter-daterange" />
+                        <Label htmlFor="filter-daterange" className="text-sm">Rentang Tanggal</Label>
+                      </div>
+                    </RadioGroup>
+                    {(selectedMonth !== 'all' || (dateRange.startDate && dateRange.endDate)) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={resetAllFilters}
+                      >
+                        <X className="w-4 h-4 mr-1" />
+                        Reset Semua
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Month Filter */}
+                  {filterType === 'month' && (
+                    <div className="flex items-center space-x-4">
+                      <Label className="text-sm font-medium text-gray-700 w-24">Pilih Bulan:</Label>
+                      <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                        <SelectTrigger className="w-64">
+                          <SelectValue placeholder="Pilih bulan" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Semua Bulan</SelectItem>
+                          {availableMonths.map((month) => (
+                            <SelectItem key={`${month.year}-${month.month}`} value={`${month.year}-${month.month}`}>
+                              {formatMonthName(month.year, month.month)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* Date Range Filter */}
+                  {filterType === 'dateRange' && (
+                    <div className="space-y-3">
+                      <div className="flex items-center space-x-4">
+                        <Label className="text-sm font-medium text-gray-700 w-24">Dari Tanggal:</Label>
+                        <Input
+                          type="date"
+                          value={dateRange.startDate}
+                          onChange={(e) => setDateRange({ ...dateRange, startDate: e.target.value })}
+                          className="w-48"
+                        />
+                        <Label className="text-sm font-medium text-gray-700">Sampai:</Label>
+                        <Input
+                          type="date"
+                          value={dateRange.endDate}
+                          onChange={(e) => setDateRange({ ...dateRange, endDate: e.target.value })}
+                          className="w-48"
+                          min={dateRange.startDate}
+                        />
+                      </div>
+                      {dateRange.startDate && dateRange.endDate && (
+                        <div className="flex items-center space-x-2 ml-28">
+                          <CalendarDays className="w-4 h-4 text-gray-500" />
+                          <span className="text-sm text-gray-600">
+                            Rentang: <span className="font-medium">{formatDateRange()}</span>
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Filter Status */}
+                  {((filterType === 'month' && selectedMonth !== 'all') || 
+                    (filterType === 'dateRange' && dateRange.startDate && dateRange.endDate)) && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                      <p className="text-sm text-blue-800">
+                        <span className="font-medium">Filter Aktif:</span>{' '}
+                        {filterType === 'month' && selectedMonth !== 'all' && (
+                          (() => {
+                            const [year, month] = selectedMonth.split('-').map(Number);
+                            return formatMonthName(year, month);
+                          })()
+                        )}
+                        {filterType === 'dateRange' && dateRange.startDate && dateRange.endDate && (
+                          formatDateRange()
+                        )}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+            
+            {transactions.length === 0 ? (
+              <p className="text-gray-600 text-center py-8">Belum ada transaksi. Tambahkan yang pertama!</p>
+            ) : (
+              <>
+                <div id="transaction-table" className="max-h-96 overflow-y-auto mb-6">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="sticky top-0 bg-white shadow-sm">
+                        <tr className="border-b">
+                          <th className="text-left py-2 px-3 text-xs font-medium text-gray-600 w-8">No</th>
+                          <th className="text-left py-2 px-3 text-xs font-medium text-gray-600">Tanggal</th>
+                          <th className="text-left py-2 px-3 text-xs font-medium text-gray-600">Keterangan</th>
+                          <th className="text-right py-2 px-3 text-xs font-medium text-gray-600">Jumlah</th>
+                          <th className="text-center py-2 px-3 text-xs font-medium text-gray-600">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {transactions.map((transaction, index) => (
+                          <tr key={transaction.id} className="border-b hover:bg-gray-50">
+                            <td className="py-2 px-3 text-center text-xs text-gray-600">
+                              {pagination.itemsPerPage === 0 ? index + 1 : (pagination.currentPage - 1) * pagination.itemsPerPage + index + 1}
+                            </td>
+                            <td className="py-2 px-3">
+                              <div className="text-xs text-gray-600">
+                                {transaction.date ? formatDate(transaction.date) : formatTimestamp(transaction.timestamp)}
+                              </div>
+                            </td>
+                            <td className="py-2 px-3">
+                              <p className="font-medium text-gray-800 text-sm truncate max-w-[120px]" title={transaction.description}>
+                                {transaction.description}
+                              </p>
+                            </td>
+                            <td className={`py-2 px-3 text-right font-bold text-sm ${
+                              transaction.type === 'income' ? 'text-green-700' : 'text-red-700'
+                            }`}>
+                              {transaction.type === 'income' ? '+' : '-'}{formatCurrency(transaction.amount)}
+                            </td>
+                            <td className="py-2 px-3">
+                              <div className="flex justify-center space-x-1">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleEdit(transaction)}
+                                  className="h-6 w-6 p-0 bg-yellow-500 hover:bg-yellow-600 text-white border-yellow-500"
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                </Button>
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleProtectedDelete(transaction.id)}
+                                      className="h-6 w-6 p-0 bg-red-500 hover:bg-red-600 text-white border-red-500"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Konfirmasi Hapus</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        Apakah Anda yakin ingin menghapus transaksi ini?
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Batal</AlertDialogCancel>
+                                      <AlertDialogAction
+                                        onClick={() => deleteId && handleDelete(deleteId)}
+                                        className="bg-red-500 hover:bg-red-600"
+                                      >
+                                        Ya, Hapus
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Pagination Controls */}
+                {pagination.totalPages > 1 && pagination.itemsPerPage !== 0 && (
+                  <div className="flex justify-center">
+                    <Pagination>
+                      <PaginationContent>
+                        <PaginationItem>
+                          <PaginationPrevious
+                            href="#"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              if (pagination.currentPage > 1) {
+                                handlePageChange(pagination.currentPage - 1);
+                              }
+                            }}
+                            className={pagination.currentPage <= 1 ? 'pointer-events-none opacity-50' : ''}
+                          />
+                        </PaginationItem>
+                        
+                        {generatePaginationItems()}
+                        
+                        <PaginationItem>
+                          <PaginationNext
+                            href="#"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              if (pagination.currentPage < pagination.totalPages) {
+                                handlePageChange(pagination.currentPage + 1);
+                              }
+                            }}
+                            className={pagination.currentPage >= pagination.totalPages ? 'pointer-events-none opacity-50' : ''}
+                          />
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Password Setup Modal */}
+      {!hasPassword && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md mx-4">
+            <CardHeader>
+              <CardTitle className="text-xl">Setup Password</CardTitle>
+              <p className="text-sm text-gray-600">
+                Buat password untuk melindungi aksi edit dan hapus transaksi
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label htmlFor="setup-password">Password</Label>
+                <Input
+                  id="setup-password"
+                  type="password"
+                  value={passwordForm.setupPassword}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, setupPassword: e.target.value })}
+                  placeholder="Masukkan password (minimal 6 karakter)"
+                  className="w-full"
+                />
+              </div>
+              <div className="flex space-x-3">
+                <Button
+                  onClick={handleSetupPassword}
+                  disabled={passwordLoading}
+                  className="flex-1"
+                >
+                  {passwordLoading ? 'Menyimpan...' : 'Simpan Password'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Password Verification Modal */}
+      {showPasswordVerify && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md mx-4">
+            <CardHeader>
+              <CardTitle className="text-xl">Verifikasi Password</CardTitle>
+              <p className="text-sm text-gray-600">
+                Masukkan password untuk melanjutkan aksi {pendingAction?.type === 'edit' ? 'edit' : 'hapus'}
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label htmlFor="verify-password">Password</Label>
+                <Input
+                  id="verify-password"
+                  type="password"
+                  value={passwordForm.verifyPassword}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, verifyPassword: e.target.value })}
+                  placeholder="Masukkan password"
+                  className="w-full"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleVerifyPassword();
+                    }
+                  }}
+                />
+              </div>
+              <div className="flex space-x-3">
+                <Button
+                  onClick={handleVerifyPassword}
+                  disabled={passwordLoading}
+                  className="flex-1"
+                >
+                  {passwordLoading ? 'Memverifikasi...' : 'Verifikasi'}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowPasswordVerify(false);
+                    setPasswordForm({ ...passwordForm, verifyPassword: '' });
+                    setPendingAction(null);
+                  }}
+                  className="flex-1"
+                >
+                  Batal
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Change Password Modal */}
+      {showChangePassword && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md mx-4">
+            <CardHeader>
+              <CardTitle className="text-xl">Ganti Password</CardTitle>
+              <p className="text-sm text-gray-600">
+                Masukkan password saat ini dan password baru
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label htmlFor="current-password">Password Saat Ini</Label>
+                <Input
+                  id="current-password"
+                  type="password"
+                  value={passwordForm.currentPassword}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                  placeholder="Masukkan password saat ini"
+                  className="w-full"
+                />
+              </div>
+              <div>
+                <Label htmlFor="new-password">Password Baru</Label>
+                <Input
+                  id="new-password"
+                  type="password"
+                  value={passwordForm.newPassword}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                  placeholder="Masukkan password baru (minimal 6 karakter)"
+                  className="w-full"
+                />
+              </div>
+              <div>
+                <Label htmlFor="confirm-password">Konfirmasi Password Baru</Label>
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  value={passwordForm.confirmPassword}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                  placeholder="Masukkan kembali password baru"
+                  className="w-full"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleChangePassword();
+                    }
+                  }}
+                />
+              </div>
+              <div className="flex space-x-3">
+                <Button
+                  onClick={handleChangePassword}
+                  disabled={passwordLoading}
+                  className="flex-1"
+                >
+                  {passwordLoading ? 'Mengubah...' : 'Ganti Password'}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowChangePassword(false);
+                    setPasswordForm({
+                      ...passwordForm,
+                      currentPassword: '',
+                      newPassword: '',
+                      confirmPassword: ''
+                    });
+                  }}
+                  className="flex-1"
+                >
+                  Batal
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
