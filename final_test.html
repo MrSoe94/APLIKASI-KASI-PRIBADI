@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Final Test - Password Modal</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+        .test-container { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .test-button { padding: 12px 24px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
+        .test-button:hover { background: #0056b3; }
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); }
+        .modal-content { background-color: white; margin: 10% auto; padding: 0; border-radius: 10px; width: 90%; max-width: 500px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+        .modal-header { background: #f8f9fa; padding: 15px 20px; border-bottom: 1px solid #e9ecef; display: flex; justify-content: space-between; align-items: center; }
+        .modal-header h3 { color: #333; font-size: 18px; margin: 0; }
+        .close { color: #aaa; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .close:hover { color: #000; }
+        .modal-body { padding: 20px; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; color: #333; font-weight: 500; }
+        .form-group input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px; box-sizing: border-box; }
+        .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-primary:hover { background: #0056b3; }
+        .status { margin-top: 20px; padding: 10px; border-radius: 5px; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🧪 Final Test - Password Modal Functionality</h1>
+        <p>This test will verify if the password modal functionality works correctly.</p>
+        
+        <button id="passwordBtn" class="test-button">
+            🔐 Ganti Password
+        </button>
+        
+        <div id="status" class="status info">
+            Click the button above to test the password modal functionality.
+        </div>
+    </div>
+
+    <!-- Password Modal -->
+    <div id="passwordModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>🔐 Ganti Password</h3>
+                <span class="close" onclick="closeModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="passwordForm">
+                    <div class="form-group">
+                        <label for="currentPassword">Password Saat Ini</label>
+                        <input type="password" id="currentPassword" required placeholder="Masukkan password saat ini (123456)">
+                    </div>
+                    <div class="form-group">
+                        <label for="newPassword">Password Baru</label>
+                        <input type="password" id="newPassword" required placeholder="Masukkan password baru">
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmPassword">Konfirmasi Password Baru</label>
+                        <input type="password" id="confirmPassword" required placeholder="Masukkan kembali password baru">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Ganti Password</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let hasPassword = true; // Simulate existing password
+
+        function updateStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+        }
+
+        function showPasswordModal() {
+            console.log('✅ showPasswordModal called successfully');
+            updateStatus('✅ Modal function called! Opening modal...', 'success');
+            
+            const modal = document.getElementById('passwordModal');
+            console.log('Modal element:', modal);
+            
+            if (modal) {
+                // Reset form
+                document.getElementById('passwordForm').reset();
+                
+                // Show modal
+                modal.style.display = 'block';
+                console.log('✅ Modal should be visible now');
+                updateStatus('✅ Modal opened successfully! You should see the password form.', 'success');
+            } else {
+                console.error('❌ Password modal not found!');
+                updateStatus('❌ Error: Modal element not found!', 'error');
+            }
+        }
+
+        function closeModal() {
+            document.querySelectorAll('.modal').forEach(modal => {
+                modal.style.display = 'none';
+            });
+            updateStatus('Modal closed. Click the button again to test.', 'info');
+        }
+
+        async function handlePasswordChange(e) {
+            e.preventDefault();
+            updateStatus('Processing password change...', 'info');
+            
+            const currentPassword = document.getElementById('currentPassword').value;
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            
+            if (newPassword !== confirmPassword) {
+                updateStatus('❌ Password baru tidak cocok!', 'error');
+                return;
+            }
+            
+            // Simple hardcoded password verification (temporary fix)
+            if (currentPassword !== '123456') {
+                updateStatus('❌ Password saat ini salah! Gunakan password: 123456', 'error');
+                return;
+            }
+            
+            try {
+                // Simulate API call
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                closeModal();
+                document.getElementById('passwordForm').reset();
+                updateStatus('✅ Password berhasil diubah (simulasi)!', 'success');
+            } catch (error) {
+                console.error('Failed to change password:', error);
+                updateStatus('❌ Gagal mengubah password', 'error');
+            }
+        }
+
+        // Initialize event listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('✅ DOM Content Loaded - Initializing test...');
+            
+            const passwordBtn = document.getElementById('passwordBtn');
+            console.log('Password button element:', passwordBtn);
+            
+            if (passwordBtn) {
+                passwordBtn.addEventListener('click', showPasswordModal);
+                console.log('✅ Event listener attached to password button');
+                updateStatus('✅ Test initialized! Click the button to test the modal.', 'success');
+            } else {
+                console.error('❌ Password button not found!');
+                updateStatus('❌ Error: Password button not found!', 'error');
+            }
+            
+            // Password form submit handler
+            const passwordForm = document.getElementById('passwordForm');
+            if (passwordForm) {
+                passwordForm.addEventListener('submit', handlePasswordChange);
+                console.log('✅ Password form submit handler attached');
+            }
+            
+            // Close modal when clicking outside
+            window.addEventListener('click', function(event) {
+                if (event.target.classList.contains('modal')) {
+                    closeModal();
+                }
+            });
+        });
+
+        // Global error handler
+        window.addEventListener('error', function(e) {
+            console.error('JavaScript Error:', e.error);
+            updateStatus('❌ JavaScript Error: ' + e.error.message, 'error');
+        });
+    </script>
+</body>
+</html>
