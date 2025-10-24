@@ -1,0 +1,41 @@
+[
+  {
+    "description": "cvvdvxds",
+    "amount": 56756765,
+    "type": "income",
+    "date": "2025-10-11",
+    "id": "0c3808e1-0c85-451b-be4e-a15e790a387b",
+    "timestamp": 1761205600855
+  },
+  {
+    "description": "asdasd",
+    "amount": 565464,
+    "type": "income",
+    "date": "2025-10-23",
+    "id": "cc8c80b1-e61c-4a16-8967-565b5eddd0d8",
+    "timestamp": 1761205537941
+  },
+  {
+    "description": "asdsads",
+    "amount": 43534543,
+    "type": "income",
+    "date": "2025-10-08",
+    "id": "7d0b2cda-d964-4ebf-a5eb-0f0a1712e446",
+    "timestamp": 1761205512620
+  },
+  {
+    "description": "df",
+    "amount": 56755.99,
+    "type": "expense",
+    "date": "2025-10-23",
+    "id": "27571f7c-2429-461e-8b44-a186c475c4a9",
+    "timestamp": 1761204917371
+  },
+  {
+    "description": "HJgj",
+    "amount": 76879,
+    "type": "income",
+    "id": "7e3d4521-e7ac-468f-b7dd-0459f377215b",
+    "timestamp": 1761204778999
+  }
+]
